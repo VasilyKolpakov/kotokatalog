@@ -19,73 +19,66 @@ public class ServerMain {
         InetSocketAddress socketAddress = new InetSocketAddress("localhost", 8080);
         var server = HttpServer.create(socketAddress, 10);
         var cats = new ArrayList<String>();
-        server.createContext("/", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                System.out.println("in handler");
-                var catsHtml = new StringBuilder();
-                synchronized (cats) {
-                    for (var name : cats) {
-                        catsHtml.append("<p>");
-                        catsHtml.append(name);
-                        catsHtml.append("</p>\n");
-                    }
+        server.createContext("/", exchange -> {
+            var catsHtml = new StringBuilder();
+            synchronized (cats) {
+                for (var name : cats) {
+                    catsHtml.append("<p>");
+                    catsHtml.append(name);
+                    catsHtml.append("</p>\n");
                 }
-                String html = "<!DOCTYPE html>\n" +
-                        "<html>\n" +
-                        "<body>\n" +
-                        "<h1>Котокаталог</h1>\n" +
-                        catsHtml +
-                        "<a href=\"/add\">добавить кота</a>\n" +
-                        "</body>\n" +
-                        "</html>\n";
-                byte[] htmlBytes = html.getBytes(StandardCharsets.UTF_8);
+            }
+            String html = "<!DOCTYPE html>\n" +
+                    "<html>\n" +
+                    "<body>\n" +
+                    "<h1>Котокаталог</h1>\n" +
+                    catsHtml +
+                    "<a href=\"/add\">добавить кота</a>\n" +
+                    "</body>\n" +
+                    "</html>\n";
+            byte[] htmlBytes = html.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/html;charset=utf-8");
+            exchange.sendResponseHeaders(200, htmlBytes.length);
+            exchange.getResponseBody().write(htmlBytes);
+            exchange.close();
+        });
+        server.createContext("/add", exchange -> {
+            String html = """
+                    <!DOCTYPE html>
+                    <html>
+                    <body>
+
+                    <form action="/add" method="post">
+                      <label for="name">Имя:</label><br>
+                      <input type="text" id="name" name="name" value=""><br>
+                      <input type="submit" value="Добавить">
+                    </form>
+                    </body>
+                    </html>""";
+            byte[] htmlBytes = html.getBytes(StandardCharsets.UTF_8);
+            if (exchange.getRequestMethod().equals("GET")) {
                 exchange.getResponseHeaders().add("Content-Type", "text/html;charset=utf-8");
                 exchange.sendResponseHeaders(200, htmlBytes.length);
                 exchange.getResponseBody().write(htmlBytes);
-                exchange.close();
-            }
-        });
-        server.createContext("/add", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                System.out.println("in handler");
-                String html = "<!DOCTYPE html>\n" +
-                        "<html>\n" +
-                        "<body>\n" +
-                        "\n" +
-                        "<form action=\"/add\" method=\"post\">\n" +
-                        "  <label for=\"name\">Имя:</label><br>\n" +
-                        "  <input type=\"text\" id=\"name\" name=\"name\" value=\"\"><br>\n" +
-                        "  <input type=\"submit\" value=\"Добавить\">\n" +
-                        "</form>\n" +
-                        "</body>\n" +
-                        "</html>";
-                byte[] htmlBytes = html.getBytes(StandardCharsets.UTF_8);
-                if (exchange.getRequestMethod().equals("GET")) {
-                    exchange.getResponseHeaders().add("Content-Type", "text/html;charset=utf-8");
-                    exchange.sendResponseHeaders(200, htmlBytes.length);
-                    exchange.getResponseBody().write(htmlBytes);
-                } else {
-                    var requestBody = new BufferedReader(new InputStreamReader(exchange.getRequestBody()))
-                            .lines()
-                            .collect(Collectors.joining());
-                    var queryParams = new HashMap<String, String>();
-                    for (var paramString : requestBody.split("&")) {
-                        var nameAndValue = paramString.split("=");
-                        queryParams.put(
-                                URLDecoder.decode(nameAndValue[0], StandardCharsets.UTF_8),
-                                URLDecoder.decode(nameAndValue[1], StandardCharsets.UTF_8)
-                        );
-                    }
-                    synchronized (cats) {
-                        cats.add(queryParams.get("name"));
-                    }
-                    exchange.getResponseHeaders().add("Location", "/");
-                    exchange.sendResponseHeaders(300, 0);
+            } else {
+                var requestBody = new BufferedReader(new InputStreamReader(exchange.getRequestBody()))
+                        .lines()
+                        .collect(Collectors.joining());
+                var queryParams = new HashMap<String, String>();
+                for (var paramString : requestBody.split("&")) {
+                    var nameAndValue = paramString.split("=");
+                    queryParams.put(
+                            URLDecoder.decode(nameAndValue[0], StandardCharsets.UTF_8),
+                            URLDecoder.decode(nameAndValue[1], StandardCharsets.UTF_8)
+                    );
                 }
-                exchange.close();
+                synchronized (cats) {
+                    cats.add(queryParams.get("name"));
+                }
+                exchange.getResponseHeaders().add("Location", "/");
+                exchange.sendResponseHeaders(300, 0);
             }
+            exchange.close();
         });
         server.start();
         System.out.printf("http://%s:%d/%n", socketAddress.getHostName(), socketAddress.getPort());

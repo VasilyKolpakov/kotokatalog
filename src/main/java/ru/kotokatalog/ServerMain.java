@@ -1,7 +1,5 @@
 package ru.kotokatalog;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.BufferedReader;
@@ -10,23 +8,42 @@ import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.stream.Collectors;
 
 public class ServerMain {
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, SQLException {
+        final String dbFile;
+        if (args.length > 0) {
+            dbFile = args[0];
+        } else {
+            dbFile = "kotokatalog.db";
+        }
+        var conn = DriverManager.getConnection("jdbc:sqlite:%1$s".formatted(dbFile));
+        try (var statement = conn.createStatement()) {
+            statement.execute("create table if not exists cat (name text)");
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.exit(1);
+        }
         InetSocketAddress socketAddress = new InetSocketAddress("localhost", 8080);
         var server = HttpServer.create(socketAddress, 10);
-        var cats = new ArrayList<String>();
         server.createContext("/", exchange -> {
             var catsHtml = new StringBuilder();
-            synchronized (cats) {
-                for (var name : cats) {
+            try (var statement = conn.createStatement()) {
+                statement.execute("select name from cat");
+                var rs = statement.getResultSet();
+                while (rs.next()) {
+                    var name = rs.getString(1);
                     catsHtml.append("<p>");
                     catsHtml.append(name);
                     catsHtml.append("</p>\n");
                 }
+            } catch (SQLException e) {
+                e.printStackTrace();
+                System.exit(1);
             }
             String html = "<!DOCTYPE html>\n" +
                     "<html>\n" +
@@ -72,8 +89,12 @@ public class ServerMain {
                             URLDecoder.decode(nameAndValue[1], StandardCharsets.UTF_8)
                     );
                 }
-                synchronized (cats) {
-                    cats.add(queryParams.get("name"));
+                try (var statement = conn.prepareStatement("insert into cat values (?)")) {
+                    statement.setString(1, queryParams.get("name"));
+                    statement.executeUpdate();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                    System.exit(1);
                 }
                 exchange.getResponseHeaders().add("Location", "/");
                 exchange.sendResponseHeaders(300, 0);

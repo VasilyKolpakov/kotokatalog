@@ -1,0 +1,14 @@
+[Unit]
+Description=kotokatalog web server
+
+[Service]
+;Environment=SYSTEMD_LOG_LEVEL=debug
+User=kotokatalog
+Type=simple
+Restart=always
+RestartSec=5s
+WorkingDirectory=/tmp
+ExecStart=java -cp /srv/kotokatalog/kotokatalog.jar ru.kotokatalog.ServerMain /srv/kotokatalog/kotokatalog.db
+
+[Install]
+WantedBy=multi-user.target

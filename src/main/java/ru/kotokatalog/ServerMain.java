@@ -1,5 +1,6 @@
 package ru.kotokatalog;
 
+import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.Velocity;
@@ -55,12 +56,7 @@ public class ServerMain {
                 e.printStackTrace();
                 System.exit(1);
             }
-            VelocityContext context = new VelocityContext();
-            context.put("cats", cats);
-            var template = Velocity.getTemplate("index.v.html");
-            StringWriter sw = new StringWriter();
-            template.merge(context, sw);
-            byte[] htmlBytes = sw.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] htmlBytes = renderIndexPage(cats);
             exchange.getResponseHeaders().add("Content-Type", "text/html;charset=utf-8");
             exchange.sendResponseHeaders(200, htmlBytes.length);
             exchange.getResponseBody().write(htmlBytes);
@@ -75,17 +71,7 @@ public class ServerMain {
                 exchange.sendResponseHeaders(200, htmlBytes.length);
                 exchange.getResponseBody().write(htmlBytes);
             } else {
-                var requestBody = new BufferedReader(new InputStreamReader(exchange.getRequestBody()))
-                        .lines()
-                        .collect(Collectors.joining());
-                var queryParams = new HashMap<String, String>();
-                for (var paramString : requestBody.split("&")) {
-                    var nameAndValue = paramString.split("=");
-                    queryParams.put(
-                            URLDecoder.decode(nameAndValue[0], StandardCharsets.UTF_8),
-                            URLDecoder.decode(nameAndValue[1], StandardCharsets.UTF_8)
-                    );
-                }
+                HashMap<String, String> queryParams = parseQueryParameters(exchange);
                 try (var statement = conn.prepareStatement("insert into cat values (?)")) {
                     statement.setString(1, queryParams.get("name"));
                     statement.executeUpdate();
@@ -100,6 +86,30 @@ public class ServerMain {
         });
         server.start();
         System.out.printf("http://%s:%d/%n", socketAddress.getHostName(), socketAddress.getPort());
+    }
+
+    private static HashMap<String, String> parseQueryParameters(HttpExchange exchange) {
+        var requestBody = new BufferedReader(new InputStreamReader(exchange.getRequestBody()))
+                .lines()
+                .collect(Collectors.joining());
+        var queryParams = new HashMap<String, String>();
+        for (var paramString : requestBody.split("&")) {
+            var nameAndValue = paramString.split("=");
+            queryParams.put(
+                    URLDecoder.decode(nameAndValue[0], StandardCharsets.UTF_8),
+                    URLDecoder.decode(nameAndValue[1], StandardCharsets.UTF_8)
+            );
+        }
+        return queryParams;
+    }
+
+    private static byte[] renderIndexPage(ArrayList<String> cats) {
+        VelocityContext context = new VelocityContext();
+        context.put("cats", cats);
+        var template = Velocity.getTemplate("index.v.html");
+        StringWriter sw = new StringWriter();
+        template.merge(context, sw);
+        return sw.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     static byte[] readStreamAsBytes(InputStream src) throws IOException {
